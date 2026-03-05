@@ -1,0 +1,51 @@
+#!/usr/bin/env python3
+"""Convert enrichment_v2.yaml (compact format) to enrichment.yaml (expanded format)."""
+
+import argparse
+import sys
+import yaml
+
+
+def convert(v2: dict) -> dict:
+    default_role_name = v2["defaults"]["roleName"]
+
+    role_arns = []
+    for account_id, entry in v2["accounts"].items():
+        role_name = entry.get("roleName", default_role_name)
+        arn = f"arn:aws:iam::{account_id}:role/{role_name}"
+        role_arns.append({
+            "role": [arn],
+            "namespaces": entry["namespaces"],
+            "regions": entry["regions"],
+        })
+
+    return {
+        "awsRegions": v2["awsRegions"],
+        "awsNamespaces": v2["awsNamespaces"],
+        "awsRoleArns": role_arns,
+    }
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Convert enrichment_v2.yaml to v1 format.")
+    parser.add_argument("input", nargs="?", default="enrichment_v2.yaml",
+                        help="Input file (default: enrichment_v2.yaml)")
+    parser.add_argument("-o", "--output", default="-",
+                        help="Output file (default: stdout)")
+    args = parser.parse_args()
+
+    with open(args.input) as f:
+        v2 = yaml.safe_load(f)
+
+    v1 = convert(v2)
+    output = yaml.dump(v1, default_flow_style=False, sort_keys=False)
+
+    if args.output == "-":
+        sys.stdout.write(output)
+    else:
+        with open(args.output, "w") as f:
+            f.write(output)
+
+
+if __name__ == "__main__":
+    main()

@@ -27,3 +27,21 @@ awsRoleArns:
       - AWS/EC2
     regions:
       - eu-west-1
+  - role:
+      - arn:aws:iam::456789012345:role/CloudWatchLogsRole
+    namespaces:
+      - AWS/EC2
+    regions:
+      - eu-west-1
+  - role:
+      - arn:aws:iam::567890123456:role/CloudWatchLogsRole
+    namespaces:
+      - AWS/EC2
+    regions:
+      - eu-west-1
+  - role:
+      - arn:aws:iam::678901234567:role/CloudWatchLogsRole
+    namespaces:
+      - AWS/EC2
+    regions:
+      - eu-west-1
