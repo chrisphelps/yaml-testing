@@ -1,0 +1,75 @@
+$schema: "https://json-schema.org/draft/07/schema"
+title: enrichment.yaml
+type: object
+required:
+  - awsRegions
+  - awsNamespaces
+  - awsRoleArns
+additionalProperties: false
+
+definitions:
+  awsRegion:
+    type: string
+    pattern: "^[a-z]{2}-[a-z]+-\\d+$"
+    examples:
+      - us-east-1
+      - eu-west-1
+      - ap-southeast-1
+
+  awsNamespace:
+    type: string
+    pattern: "^[A-Za-z0-9][A-Za-z0-9/_-]*$"
+    examples:
+      - AWS/Lambda
+      - AWS/EC2
+
+  awsRoleArn:
+    type: string
+    pattern: "^arn:aws:iam::\\d{12}:role/.+$"
+    examples:
+      - "arn:aws:iam::123456789012:role/CloudWatchLogsRole"
+
+properties:
+  awsRegions:
+    type: array
+    minItems: 1
+    uniqueItems: true
+    items:
+      $ref: "#/definitions/awsRegion"
+
+  awsNamespaces:
+    type: array
+    minItems: 1
+    uniqueItems: true
+    items:
+      $ref: "#/definitions/awsNamespace"
+
+  awsRoleArns:
+    type: array
+    minItems: 1
+    items:
+      type: object
+      required:
+        - role
+        - namespaces
+        - regions
+      additionalProperties: false
+      properties:
+        role:
+          type: array
+          minItems: 1
+          maxItems: 1
+          items:
+            $ref: "#/definitions/awsRoleArn"
+        namespaces:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items:
+            $ref: "#/definitions/awsNamespace"
+        regions:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items:
+            $ref: "#/definitions/awsRegion"

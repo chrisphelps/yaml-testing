@@ -1,0 +1,29 @@
+awsRegions:
+    - us-east-1
+    - us-west-2
+    - eu-west-1
+    - ap-southeast-1
+awsNamespaces:
+    - AWS/Lambda
+    - AWS/EC2
+    - AWS/S3
+    - AWS/DynamoDB
+awsRoleArns:
+  - role:
+      - arn:aws:iam::123456789012:role/CloudWatchLogsRole
+    namespaces:
+      - AWS/EC2
+    regions:
+      - us-west-2
+  - role:
+      - arn:aws:iam::234567890123:role/CloudWatchLogsRole
+    namespaces:
+      - AWS/Lambda
+    regions:
+      - us-west-2
+  - role:
+      - arn:aws:iam::345678901234:role/CloudWatchLogsRole
+    namespaces:
+      - AWS/EC2
+    regions:
+      - eu-west-1
