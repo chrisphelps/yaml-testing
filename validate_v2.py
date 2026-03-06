@@ -9,15 +9,10 @@ SCHEMA_FILE = "schema_v2.yaml"
 CONFIG_FILE = "enrichment_v2.yaml"
 
 errors = []
-warnings = []
 
 
 def err(msg):
     errors.append(f"  ERROR: {msg}")
-
-
-def warn(msg):
-    warnings.append(f"  WARN:  {msg}")
 
 
 def load_yaml(path):
@@ -32,36 +27,6 @@ def validate_schema(config, schema):
         path = " -> ".join(str(p) for p in e.absolute_path) or "(root)"
         err(f"[schema] {path}: {e.message}")
 
-
-def validate_cross_references(config):
-    top_regions = set(config.get("awsRegions", []))
-    top_namespaces = set(config.get("awsNamespaces", []))
-
-    for account_id, entry in config.get("accounts", {}).items():
-        for ns in entry.get("namespaces", []):
-            if ns not in top_namespaces:
-                err(f"Account {account_id}: namespace '{ns}' not in top-level awsNamespaces")
-
-        for region in entry.get("regions", []):
-            if region not in top_regions:
-                err(f"Account {account_id}: region '{region}' not in top-level awsRegions")
-
-
-def validate_unused_top_level(config):
-    top_regions = set(config.get("awsRegions", []))
-    top_namespaces = set(config.get("awsNamespaces", []))
-
-    used_regions = set()
-    used_namespaces = set()
-    for entry in config.get("accounts", {}).values():
-        used_regions.update(entry.get("regions", []))
-        used_namespaces.update(entry.get("namespaces", []))
-
-    for region in top_regions - used_regions:
-        warn(f"Region '{region}' declared in awsRegions but not used by any account")
-
-    for ns in top_namespaces - used_namespaces:
-        warn(f"Namespace '{ns}' declared in awsNamespaces but not used by any account")
 
 
 def show_resolved_arns(config):
@@ -90,16 +55,12 @@ def main():
         sys.exit(1)
 
     validate_schema(config, schema)
-    if not errors:
-        validate_cross_references(config)
-        validate_unused_top_level(config)
 
-    if errors or warnings:
-        status = "FAIL" if errors else "WARN"
-        print(f"{status}  {CONFIG_FILE}")
-        for line in errors + warnings:
+    if errors:
+        print(f"FAIL  {CONFIG_FILE}")
+        for line in errors:
             print(line)
-        sys.exit(1 if errors else 0)
+        sys.exit(1)
     else:
         print(f"OK    {CONFIG_FILE}")
         show_resolved_arns(config)

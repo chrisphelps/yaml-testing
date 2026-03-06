@@ -3,8 +3,6 @@ from convert import convert
 
 BASE_V2 = {
     "defaults": {"roleName": "CloudWatchLogsRole"},
-    "awsRegions": ["us-east-1", "us-west-2"],
-    "awsNamespaces": ["AWS/EC2", "AWS/Lambda"],
     "accounts": {
         "123456789012": {
             "namespaces": ["AWS/EC2"],
@@ -23,10 +21,29 @@ def test_top_level_keys():
     assert set(result.keys()) == {"awsRegions", "awsNamespaces", "awsRoleArns"}
 
 
-def test_regions_and_namespaces_passed_through():
+def test_regions_and_namespaces_derived_from_accounts():
     result = convert(BASE_V2)
-    assert result["awsRegions"] == ["us-east-1", "us-west-2"]
-    assert result["awsNamespaces"] == ["AWS/EC2", "AWS/Lambda"]
+    assert set(result["awsRegions"]) == {"us-east-1", "us-west-2"}
+    assert set(result["awsNamespaces"]) == {"AWS/EC2", "AWS/Lambda"}
+
+
+def test_regions_and_namespaces_are_sorted():
+    result = convert(BASE_V2)
+    assert result["awsRegions"] == sorted(result["awsRegions"])
+    assert result["awsNamespaces"] == sorted(result["awsNamespaces"])
+
+
+def test_regions_and_namespaces_deduplicated():
+    v2 = {
+        **BASE_V2,
+        "accounts": {
+            "123456789012": {"namespaces": ["AWS/EC2"], "regions": ["us-west-2"]},
+            "234567890123": {"namespaces": ["AWS/EC2"], "regions": ["us-west-2"]},
+        },
+    }
+    result = convert(v2)
+    assert result["awsRegions"] == ["us-west-2"]
+    assert result["awsNamespaces"] == ["AWS/EC2"]
 
 
 def test_role_arn_constructed_from_default_role_name():
@@ -96,3 +113,5 @@ def test_empty_accounts():
     v2 = {**BASE_V2, "accounts": {}}
     result = convert(v2)
     assert result["awsRoleArns"] == []
+    assert result["awsRegions"] == []
+    assert result["awsNamespaces"] == []

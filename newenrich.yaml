@@ -3,8 +3,12 @@ defaults:
 
 accounts:
   "123456789012":
-    namespaces: [AWS/EC2]
-    regions: [us-west-2]
+    namespaces:
+        - AWS/EC2
+        - AWS/S3
+    regions:
+        - us-west-2
+        - us-east-1
   "234567890123":
     namespaces: [AWS/Lambda]
     regions: [us-west-2]

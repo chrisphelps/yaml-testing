@@ -3,8 +3,6 @@ title: enrichment_v2.yaml
 type: object
 required:
   - defaults
-  - awsRegions
-  - awsNamespaces
   - accounts
 additionalProperties: false
 
@@ -34,20 +32,6 @@ properties:
     properties:
       roleName:
         $ref: "#/definitions/roleName"
-
-  awsRegions:
-    type: array
-    minItems: 1
-    uniqueItems: true
-    items:
-      $ref: "#/definitions/awsRegion"
-
-  awsNamespaces:
-    type: array
-    minItems: 1
-    uniqueItems: true
-    items:
-      $ref: "#/definitions/awsNamespace"
 
   accounts:
     type: object
