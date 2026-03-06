@@ -1,13 +1,16 @@
 defaults:
   roleName: CloudWatchLogsRole
 
-accounts:
-  "123456789012":
+teams:
+  - name: compute
     namespaces: [AWS/EC2]
-    regions: [us-west-2]
-  "234567890123":
+    accounts:
+      "123456789012":
+        regions: [us-west-2]
+      "345678901234":
+        regions: [eu-west-1]
+  - name: serverless
     namespaces: [AWS/Lambda]
-    regions: [us-west-2]
-  "345678901234":
-    namespaces: [AWS/EC2]
-    regions: [eu-west-1]
+    accounts:
+      "234567890123":
+        regions: [us-west-2]

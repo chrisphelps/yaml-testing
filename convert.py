@@ -12,16 +12,17 @@ def convert(v2: dict) -> dict:
     all_regions = set()
     all_namespaces = set()
     role_arns = []
-    for account_id, entry in v2["accounts"].items():
-        all_regions.update(entry["regions"])
-        all_namespaces.update(entry["namespaces"])
-        role_name = entry.get("roleName", default_role_name)
-        arn = f"arn:aws:iam::{account_id}:role/{role_name}"
-        role_arns.append({
-            "role": [arn],
-            "namespaces": entry["namespaces"],
-            "regions": entry["regions"],
-        })
+    for team in v2["teams"]:
+        role_name = team.get("roleName", default_role_name)
+        for account_id, account in team["accounts"].items():
+            all_regions.update(account["regions"])
+            all_namespaces.update(team["namespaces"])
+            arn = f"arn:aws:iam::{account_id}:role/{role_name}"
+            role_arns.append({
+                "role": [arn],
+                "namespaces": team["namespaces"],
+                "regions": account["regions"],
+            })
 
     return {
         "awsRegions": sorted(all_regions),

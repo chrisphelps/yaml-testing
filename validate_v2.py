@@ -28,14 +28,25 @@ def validate_schema(config, schema):
         err(f"[schema] {path}: {e.message}")
 
 
+def validate_unique_accounts(config):
+    seen = {}
+    for team in config.get("teams", []):
+        team_name = team.get("name", "<unnamed>")
+        for account_id in team.get("accounts", {}):
+            if account_id in seen:
+                err(f"Account {account_id} appears in both team '{seen[account_id]}' and '{team_name}'")
+            else:
+                seen[account_id] = team_name
+
 
 def show_resolved_arns(config):
     default_role = config.get("defaults", {}).get("roleName", "")
     print("  Resolved ARNs:")
-    for account_id, entry in config.get("accounts", {}).items():
-        role_name = entry.get("roleName", default_role)
-        arn = f"arn:aws:iam::{account_id}:role/{role_name}"
-        print(f"    {arn}")
+    for team in config.get("teams", []):
+        role_name = team.get("roleName", default_role)
+        for account_id in team.get("accounts", {}):
+            arn = f"arn:aws:iam::{account_id}:role/{role_name}"
+            print(f"    [{team['name']}] {arn}")
 
 
 def main():
@@ -55,6 +66,8 @@ def main():
         sys.exit(1)
 
     validate_schema(config, schema)
+    if not errors:
+        validate_unique_accounts(config)
 
     if errors:
         print(f"FAIL  {CONFIG_FILE}")

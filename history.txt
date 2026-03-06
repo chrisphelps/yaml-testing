@@ -607,4 +607,464 @@
   - test_convert.py — removed awsRegions/awsNamespaces from BASE_V2; replaced the passthrough test with three new tests covering derivation, sorting, and deduplication
 
 
+# Step 4 - refactor to teams structure
+
+
+❯ in enrichment_v2.yaml, extract the notion of a "team". The team has a name, a list of namespaces, and a set of accounts. Each account has one or more regions. Update enrichment_v2.yaml to this format, and
+  update the schema and validation script. Update convert.py to handle this change, still outputting the original enrichment.yaml format.
+
+⏺ Let me read the current state of all files I'll be changing before touching anything.
+
+⏺ Read 5 files (ctrl+o to expand)
+
+⏺ Good picture of the current state. The existing data groups naturally: accounts 123456789012 and 345678901234 both use AWS/EC2, 234567890123 uses AWS/Lambda. I'll use that for the sample data. The roleName
+  override moves to the team level (account entries now only hold regions).
+
+⏺ Write(enrichment_v2.yaml)
+  ⎿  Added 11 lines, removed 8 lines
+       1  defaults:
+       2    roleName: CloudWatchLogsRole
+       3
+       4 -accounts:
+       5 -  "123456789012":
+       4 +teams:
+       5 +  - name: compute
+       6      namespaces: [AWS/EC2]
+       7 -    regions: [us-west-2]
+       8 -  "234567890123":
+       7 +    accounts:
+       8 +      "123456789012":
+       9 +        regions: [us-west-2]
+      10 +      "345678901234":
+      11 +        regions: [eu-west-1]
+      12 +  - name: serverless
+      13      namespaces: [AWS/Lambda]
+      10 -    regions: [us-west-2]
+      11 -  "345678901234":
+      12 -    namespaces: [AWS/EC2]
+      13 -    regions: [eu-west-1]
+      14 +    accounts:
+      15 +      "234567890123":
+      16 +        regions: [us-west-2]
+
+⏺ Write(schema_v2.yaml)
+  ⎿  Added 40 lines, removed 31 lines
+      3  type: object
+      4  required:
+      5    - defaults
+      6 -  - accounts
+      6 +  - teams
+      7  additionalProperties: false
+      8
+      9  definitions:
+     ...
+      15      type: string
+      16      pattern: "^[A-Za-z0-9][A-Za-z0-9/_-]*$"
+      17
+      18 -  accountId:
+      19 -    type: string
+      20 -    pattern: "^\\d{12}$"
+      21 -
+      18    roleName:
+      19      type: string
+      20      pattern: "^[\\w+=,.@/-]+$"
+     ...
+      29        roleName:
+      30          $ref: "#/definitions/roleName"
+      31
+      36 -  accounts:
+      37 -    type: object
+      38 -    minProperties: 1
+      39 -    additionalProperties: false
+      40 -    patternProperties:
+      41 -      "^\\d{12}$":
+      42 -        type: object
+      43 -        required:
+      44 -          - namespaces
+      45 -          - regions
+      46 -        additionalProperties: false
+      47 -        properties:
+      48 -          roleName:
+      49 -            $ref: "#/definitions/roleName"
+      50 -          namespaces:
+      51 -            type: array
+      52 -            minItems: 1
+      53 -            uniqueItems: true
+      54 -            items:
+      55 -              $ref: "#/definitions/awsNamespace"
+      56 -          regions:
+      57 -            type: array
+      58 -            minItems: 1
+      59 -            uniqueItems: true
+      60 -            items:
+      61 -              $ref: "#/definitions/awsRegion"
+      32 +  teams:
+      33 +    type: array
+      34 +    minItems: 1
+      35 +    items:
+      36 +      type: object
+      37 +      required:
+      38 +        - name
+      39 +        - namespaces
+      40 +        - accounts
+      41 +      additionalProperties: false
+      42 +      properties:
+      43 +        name:
+      44 +          type: string
+      45 +          minLength: 1
+      46 +        namespaces:
+      47 +          type: array
+      48 +          minItems: 1
+      49 +          uniqueItems: true
+      50 +          items:
+      51 +            $ref: "#/definitions/awsNamespace"
+      52 +        roleName:
+      53 +          $ref: "#/definitions/roleName"
+      54 +        accounts:
+      55 +          type: object
+      56 +          minProperties: 1
+      57 +          additionalProperties: false
+      58 +          patternProperties:
+      59 +            "^\\d{12}$":
+      60 +              type: object
+      61 +              required:
+      62 +                - regions
+      63 +              additionalProperties: false
+      64 +              properties:
+      65 +                regions:
+      66 +                  type: array
+      67 +                  minItems: 1
+      68 +                  uniqueItems: true
+      69 +                  items:
+      70 +                    $ref: "#/definitions/awsRegion"
+
+⏺ Write(validate_v2.py)
+  ⎿  Added 17 lines, removed 4 lines
+      28          err(f"[schema] {path}: {e.message}")
+      29
+      30
+      31 +def validate_unique_accounts(config):
+      32 +    seen = {}
+      33 +    for team in config.get("teams", []):
+      34 +        team_name = team.get("name", "<unnamed>")
+      35 +        for account_id in team.get("accounts", {}):
+      36 +            if account_id in seen:
+      37 +                err(f"Account {account_id} appears in both team '{seen[account_id]}' and '{team_name}'")
+      38 +            else:
+      39 +                seen[account_id] = team_name
+      40
+      41 +
+      42  def show_resolved_arns(config):
+      43      default_role = config.get("defaults", {}).get("roleName", "")
+      44      print("  Resolved ARNs:")
+      35 -    for account_id, entry in config.get("accounts", {}).items():
+      36 -        role_name = entry.get("roleName", default_role)
+      37 -        arn = f"arn:aws:iam::{account_id}:role/{role_name}"
+      38 -        print(f"    {arn}")
+      45 +    for team in config.get("teams", []):
+      46 +        role_name = team.get("roleName", default_role)
+      47 +        for account_id in team.get("accounts", {}):
+      48 +            arn = f"arn:aws:iam::{account_id}:role/{role_name}"
+      49 +            print(f"    [{team['name']}] {arn}")
+      50
+      51
+      52  def main():
+     ...
+      66          sys.exit(1)
+      67
+      68      validate_schema(config, schema)
+      69 +    if not errors:
+      70 +        validate_unique_accounts(config)
+      71
+      72      if errors:
+      73          print(f"FAIL  {CONFIG_FILE}")
+
+⏺ Write(convert.py)
+  ⎿  Added 11 lines, removed 10 lines
+      12      all_regions = set()
+      13      all_namespaces = set()
+      14      role_arns = []
+      15 -    for account_id, entry in v2["accounts"].items():
+      16 -        all_regions.update(entry["regions"])
+      17 -        all_namespaces.update(entry["namespaces"])
+      18 -        role_name = entry.get("roleName", default_role_name)
+      19 -        arn = f"arn:aws:iam::{account_id}:role/{role_name}"
+      20 -        role_arns.append({
+      21 -            "role": [arn],
+      22 -            "namespaces": entry["namespaces"],
+      23 -            "regions": entry["regions"],
+      24 -        })
+      15 +    for team in v2["teams"]:
+      16 +        role_name = team.get("roleName", default_role_name)
+      17 +        for account_id, account in team["accounts"].items():
+      18 +            all_regions.update(account["regions"])
+      19 +            all_namespaces.update(team["namespaces"])
+      20 +            arn = f"arn:aws:iam::{account_id}:role/{role_name}"
+      21 +            role_arns.append({
+      22 +                "role": [arn],
+      23 +                "namespaces": team["namespaces"],
+      24 +                "regions": account["regions"],
+      25 +            })
+      26
+      27      return {
+      28          "awsRegions": sorted(all_regions),
+
+⏺ Now rewrite the tests for the new structure:
+
+⏺ Write(test_convert.py)
+  ⎿  Added 67 lines, removed 46 lines
+       1 -import pytest
+       1  from convert import convert
+       2
+       3  BASE_V2 = {
+       4      "defaults": {"roleName": "CloudWatchLogsRole"},
+       6 -    "accounts": {
+       7 -        "123456789012": {
+       5 +    "teams": [
+       6 +        {
+       7 +            "name": "compute",
+       8              "namespaces": ["AWS/EC2"],
+       9 -            "regions": ["us-west-2"],
+       9 +            "accounts": {
+      10 +                "123456789012": {"regions": ["us-west-2"]},
+      11 +                "345678901234": {"regions": ["eu-west-1"]},
+      12 +            },
+      13          },
+      11 -        "234567890123": {
+      14 +        {
+      15 +            "name": "serverless",
+      16              "namespaces": ["AWS/Lambda"],
+      13 -            "regions": ["us-east-1"],
+      17 +            "accounts": {
+      18 +                "234567890123": {"regions": ["us-west-2"]},
+      19 +            },
+      20          },
+      15 -    },
+      21 +    ],
+      22  }
+      23
+      24
+     ...
+      27      assert set(result.keys()) == {"awsRegions", "awsNamespaces", "awsRoleArns"}
+      28
+      29
+      24 -def test_regions_and_namespaces_derived_from_accounts():
+      30 +def test_regions_derived_from_all_teams():
+      31      result = convert(BASE_V2)
+      26 -    assert set(result["awsRegions"]) == {"us-east-1", "us-west-2"}
+      32 +    assert set(result["awsRegions"]) == {"us-west-2", "eu-west-1"}
+      33 +
+      34 +
+      35 +def test_namespaces_derived_from_all_teams():
+      36 +    result = convert(BASE_V2)
+      37      assert set(result["awsNamespaces"]) == {"AWS/EC2", "AWS/Lambda"}
+      38
+      39
+     ...
+      46  def test_regions_and_namespaces_deduplicated():
+      47      v2 = {
+      48          **BASE_V2,
+      39 -        "accounts": {
+      40 -            "123456789012": {"namespaces": ["AWS/EC2"], "regions": ["us-west-2"]},
+      41 -            "234567890123": {"namespaces": ["AWS/EC2"], "regions": ["us-west-2"]},
+      42 -        },
+      49 +        "teams": [
+      50 +            {
+      51 +                "name": "t1",
+      52 +                "namespaces": ["AWS/EC2"],
+      53 +                "accounts": {"123456789012": {"regions": ["us-west-2"]}},
+      54 +            },
+      55 +            {
+      56 +                "name": "t2",
+      57 +                "namespaces": ["AWS/EC2"],
+      58 +                "accounts": {"234567890123": {"regions": ["us-west-2"]}},
+      59 +            },
+      60 +        ],
+      61      }
+      62      result = convert(v2)
+      63      assert result["awsRegions"] == ["us-west-2"]
+      64      assert result["awsNamespaces"] == ["AWS/EC2"]
+      65
+      66
+      49 -def test_role_arn_constructed_from_default_role_name():
+      67 +def test_role_count_equals_total_accounts():
+      68      result = convert(BASE_V2)
+      51 -    arns = [entry["role"][0] for entry in result["awsRoleArns"]]
+      52 -    assert "arn:aws:iam::123456789012:role/CloudWatchLogsRole" in arns
+      53 -    assert "arn:aws:iam::234567890123:role/CloudWatchLogsRole" in arns
+      69 +    total_accounts = sum(len(t["accounts"]) for t in BASE_V2["teams"])
+      70 +    assert len(result["awsRoleArns"]) == total_accounts
+      71
+      72
+      73  def test_role_is_single_item_list():
+     ...
+       77          assert len(entry["role"]) == 1
+       78
+       79
+       63 -def test_namespaces_and_regions_per_account():
+       80 +def test_arn_constructed_from_default_role_name():
+       81      result = convert(BASE_V2)
+       82 +    arns = [e["role"][0] for e in result["awsRoleArns"]]
+       83 +    assert "arn:aws:iam::123456789012:role/CloudWatchLogsRole" in arns
+       84 +    assert "arn:aws:iam::234567890123:role/CloudWatchLogsRole" in arns
+       85 +    assert "arn:aws:iam::345678901234:role/CloudWatchLogsRole" in arns
+       86 +
+       87 +
+       88 +def test_namespaces_come_from_team():
+       89 +    result = convert(BASE_V2)
+       90      by_arn = {e["role"][0]: e for e in result["awsRoleArns"]}
+       91 +    assert by_arn["arn:aws:iam::123456789012:role/CloudWatchLogsRole"]["namespaces"] == ["AWS/EC2"]
+       92 +    assert by_arn["arn:aws:iam::234567890123:role/CloudWatchLogsRole"]["namespaces"] == ["AWS/Lambda"]
+       93
+       67 -    entry_1 = by_arn["arn:aws:iam::123456789012:role/CloudWatchLogsRole"]
+       68 -    assert entry_1["namespaces"] == ["AWS/EC2"]
+       69 -    assert entry_1["regions"] == ["us-west-2"]
+       94
+       71 -    entry_2 = by_arn["arn:aws:iam::234567890123:role/CloudWatchLogsRole"]
+       72 -    assert entry_2["namespaces"] == ["AWS/Lambda"]
+       73 -    assert entry_2["regions"] == ["us-east-1"]
+       95 +def test_regions_come_from_account():
+       96 +    result = convert(BASE_V2)
+       97 +    by_arn = {e["role"][0]: e for e in result["awsRoleArns"]}
+       98 +    assert by_arn["arn:aws:iam::123456789012:role/CloudWatchLogsRole"]["regions"] == ["us-west-2"]
+       99 +    assert by_arn["arn:aws:iam::345678901234:role/CloudWatchLogsRole"]["regions"] == ["eu-west-1"]
+      100
+      101
+       76 -def test_per_account_role_name_override():
+      102 +def test_team_role_name_override():
+      103      v2 = {
+      104          **BASE_V2,
+       79 -        "accounts": {
+       80 -            "123456789012": {
+       81 -                "roleName": "CustomRole",
+      105 +        "teams": [
+      106 +            {
+      107 +                "name": "compute",
+      108                  "namespaces": ["AWS/EC2"],
+       83 -                "regions": ["us-west-2"],
+      109 +                "roleName": "CustomRole",
+      110 +                "accounts": {"123456789012": {"regions": ["us-west-2"]}},
+      111              },
+       85 -        },
+      112 +        ],
+      113      }
+      114      result = convert(v2)
+       88 -    arn = result["awsRoleArns"][0]["role"][0]
+       89 -    assert arn == "arn:aws:iam::123456789012:role/CustomRole"
+      115 +    assert result["awsRoleArns"][0]["role"][0] == "arn:aws:iam::123456789012:role/CustomRole"
+      116
+      117
+       92 -def test_account_without_override_uses_default_role_name():
+      118 +def test_team_without_role_name_uses_default():
+      119      v2 = {
+      120          **BASE_V2,
+       95 -        "accounts": {
+       96 -            "123456789012": {
+      121 +        "teams": [
+      122 +            {
+      123 +                "name": "compute",
+      124                  "namespaces": ["AWS/EC2"],
+       98 -                "regions": ["us-west-2"],
+      125 +                "accounts": {"123456789012": {"regions": ["us-west-2"]}},
+      126              },
+      100 -        },
+      127 +        ],
+      128      }
+      129      result = convert(v2)
+      103 -    arn = result["awsRoleArns"][0]["role"][0]
+      104 -    assert arn == "arn:aws:iam::123456789012:role/CloudWatchLogsRole"
+      130 +    assert result["awsRoleArns"][0]["role"][0] == "arn:aws:iam::123456789012:role/CloudWatchLogsRole"
+      131
+      132
+      107 -def test_account_count_matches():
+      108 -    result = convert(BASE_V2)
+      109 -    assert len(result["awsRoleArns"]) == len(BASE_V2["accounts"])
+      110 -
+      111 -
+      112 -def test_empty_accounts():
+      113 -    v2 = {**BASE_V2, "accounts": {}}
+      133 +def test_empty_teams():
+      134 +    v2 = {**BASE_V2, "teams": []}
+      135      result = convert(v2)
+      136      assert result["awsRoleArns"] == []
+      137      assert result["awsRegions"] == []
+
+⏺ Bash(uv run pytest test_convert.py -v && uv run validate_v2.py)
+  ⎿  ============================= test session starts ==============================
+     platform darwin -- Python 3.13.2, pytest-9.0.2, pluggy-1.6.0 -- /Users/chris/projects/yaml-testing/.venv/bin/python3
+     cachedir: .pytest_cache
+     … +24 lines (ctrl+o to expand)
+
+⏺ All 13 tests pass. Summary of changes:
+
+  - enrichment_v2.yaml — accounts replaced by teams, each with a name, namespaces, and accounts map (accounts now only carry regions)
+  - schema_v2.yaml — accounts top-level property replaced by teams array; roleName override moved to team level; account entries now only have regions
+  - validate_v2.py — replaced old cross-reference checks with validate_unique_accounts() which catches the same account ID appearing in multiple teams; show_resolved_arns now labels each ARN with its team name
+  - convert.py — iterates teams, using the team's namespaces and optional roleName per account; roleName override is now at team level
+  - test_convert.py — fully rewritten around the team structure; test_per_account_role_name_override replaced with test_team_role_name_override
+
+✻ Cogitated for 1m 29s
+
+❯ update newenrich.yaml to the enrichment_v2.yaml format
+
+⏺ I don't see a newenrich.yaml in the project — did you mean enrichment.yaml (the v1 file), or is there a file by that name elsewhere?
+
+❯ newenrich.yaml is in the project directory
+
+⏺ Searched for 1 pattern, read 1 file (ctrl+o to expand)
+
+⏺ Each account here has a distinct namespace set, so each becomes its own team. I'll derive names from the namespaces — let me know if you want them renamed.
+
+⏺ Write(newenrich.yaml)
+  ⎿  Added 16 lines, removed 12 lines
+       1  defaults:
+       2    roleName: CloudWatchLogsRole
+       3
+       4 -accounts:
+       5 -  "123456789012":
+       6 -    namespaces:
+       7 -        - AWS/EC2
+       8 -        - AWS/S3
+       9 -    regions:
+      10 -        - us-west-2
+      11 -        - us-east-1
+      12 -  "234567890123":
+       4 +teams:
+       5 +  - name: compute-storage
+       6 +    namespaces: [AWS/EC2, AWS/S3]
+       7 +    accounts:
+       8 +      "123456789012":
+       9 +        regions: [us-west-2, us-east-1]
+      10 +
+      11 +  - name: serverless
+      12      namespaces: [AWS/Lambda]
+      14 -    regions: [us-west-2]
+      15 -  "345678901234":
+      13 +    accounts:
+      14 +      "234567890123":
+      15 +        regions: [us-west-2]
+      16 +
+      17 +  - name: compute
+      18      namespaces: [AWS/EC2]
+      17 -    regions: [eu-west-1]
+      19   No newline at end of file
+      20 +    accounts:
+      21 +      "345678901234":
+      22 +        regions: [eu-west-1]
+
+⏺ Done. Since no two accounts shared the same namespace set, each became its own team. Team names I chose:
+
+  ┌─────────────────┬──────────────────┐
+  │      Team       │      Reason      │
+  ├─────────────────┼──────────────────┤
+  │ compute-storage │ AWS/EC2 + AWS/S3 │
+  ├─────────────────┼──────────────────┤
+  │ serverless      │ AWS/Lambda       │
+  ├─────────────────┼──────────────────┤
+  │ compute         │ AWS/EC2 only     │
+  └─────────────────┴──────────────────┘
+
+  If accounts 123456789012 and 345678901234 should be in the same team (both use EC2), they'd need to share the same namespace list — let me know if you want to consolidate them.
+
+
 

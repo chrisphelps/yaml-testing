@@ -3,7 +3,7 @@ title: enrichment_v2.yaml
 type: object
 required:
   - defaults
-  - accounts
+  - teams
 additionalProperties: false
 
 definitions:
@@ -14,10 +14,6 @@ definitions:
   awsNamespace:
     type: string
     pattern: "^[A-Za-z0-9][A-Za-z0-9/_-]*$"
-
-  accountId:
-    type: string
-    pattern: "^\\d{12}$"
 
   roleName:
     type: string
@@ -33,29 +29,42 @@ properties:
       roleName:
         $ref: "#/definitions/roleName"
 
-  accounts:
-    type: object
-    minProperties: 1
-    additionalProperties: false
-    patternProperties:
-      "^\\d{12}$":
-        type: object
-        required:
-          - namespaces
-          - regions
-        additionalProperties: false
-        properties:
-          roleName:
-            $ref: "#/definitions/roleName"
-          namespaces:
-            type: array
-            minItems: 1
-            uniqueItems: true
-            items:
-              $ref: "#/definitions/awsNamespace"
-          regions:
-            type: array
-            minItems: 1
-            uniqueItems: true
-            items:
-              $ref: "#/definitions/awsRegion"
+  teams:
+    type: array
+    minItems: 1
+    items:
+      type: object
+      required:
+        - name
+        - namespaces
+        - accounts
+      additionalProperties: false
+      properties:
+        name:
+          type: string
+          minLength: 1
+        namespaces:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items:
+            $ref: "#/definitions/awsNamespace"
+        roleName:
+          $ref: "#/definitions/roleName"
+        accounts:
+          type: object
+          minProperties: 1
+          additionalProperties: false
+          patternProperties:
+            "^\\d{12}$":
+              type: object
+              required:
+                - regions
+              additionalProperties: false
+              properties:
+                regions:
+                  type: array
+                  minItems: 1
+                  uniqueItems: true
+                  items:
+                    $ref: "#/definitions/awsRegion"
